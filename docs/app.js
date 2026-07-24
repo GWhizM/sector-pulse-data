@@ -2,6 +2,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const runtimeConfig = window.SECTOR_PULSE_CONFIG || {};
 const staticMode = Boolean(runtimeConfig.staticMode && runtimeConfig.apiBase);
+const historyEnabled = !staticMode || Boolean(runtimeConfig.historyEnabled);
 const apiUrl = path => staticMode ? `${runtimeConfig.apiBase.replace(/\/$/, "")}${path}` : path;
 const defaults = { period: 14, oversold: 30, overbought: 70 };
 let settings = { ...defaults, ...JSON.parse(localStorage.getItem("sectorPulseSettings") || "{}") };
@@ -329,6 +330,11 @@ let historyTicker = null;
 let historyRange = "1m";
 let historyChartState = null;
 
+function normalizeHistoryTicker(value) {
+  const ticker = String(value || "").trim().toUpperCase();
+  return ["BRK/B", "BRK.B", "BRK-B"].includes(ticker) ? "BRK/B" : ticker;
+}
+
 function savedHistoryStarts() {
   try { return JSON.parse(localStorage.getItem("sectorPulseHistoryStarts") || "{}"); }
   catch (_) { return {}; }
@@ -341,7 +347,7 @@ function savedHistoryComparisons() {
 
 function customHistoryComparisons(ticker = historyTicker) {
   const saved = savedHistoryComparisons();
-  return [...new Set((saved[ticker] || []).map(item => String(item).toUpperCase()))].slice(0, 3);
+  return [...new Set((saved[ticker] || []).map(normalizeHistoryTicker))].slice(0, 3);
 }
 
 function saveHistoryComparisons(items) {
@@ -493,7 +499,7 @@ async function loadSectorHistory(force = false) {
 }
 
 function openSectorHistory(ticker) {
-  historyTicker = ticker;
+  historyTicker = normalizeHistoryTicker(ticker);
   const customStart = savedHistoryStarts()[ticker] || "";
   historyRange = customStart ? "custom" : "1m";
   $("#historyStartDate").value = customStart;
@@ -592,7 +598,7 @@ function renderContributionDonut(data) {
     path.addEventListener("mouseleave", resetCenter);
     path.addEventListener("focus", () => showSector(item));
     path.addEventListener("blur", resetCenter);
-    if (!staticMode) path.addEventListener("click", () => openSectorHistory(item.ticker));
+    if (historyEnabled) path.addEventListener("click", () => openSectorHistory(item.ticker));
     svg.append(path);
     const legendItem = document.createElement("button");
     legendItem.className = "donut-legend-item";
@@ -604,7 +610,7 @@ function renderContributionDonut(data) {
     legendItem.addEventListener("mouseleave", () => { resetCenter(); path.classList.remove("active"); });
     legendItem.addEventListener("focus", () => { showSector(item); path.classList.add("active"); });
     legendItem.addEventListener("blur", () => { resetCenter(); path.classList.remove("active"); });
-    if (!staticMode) legendItem.addEventListener("click", () => openSectorHistory(item.ticker));
+    if (historyEnabled) legendItem.addEventListener("click", () => openSectorHistory(item.ticker));
     legendItem.addEventListener("dragstart", event => {
       draggedLegendItem = legendItem;
       legendItem.classList.add("dragging");
@@ -659,7 +665,7 @@ function renderContributionBars(data) {
       row.dataset.ticker = item.ticker;
       row.className = `contribution-row ${item.changePct >= 0 ? "positive" : "negative"}`;
       row.innerHTML = `<div class="contribution-track"><button type="button" class="bar-sector-label" aria-label="Open ${item.name} history"><strong>${item.name}</strong><small>${item.ticker}</small></button><i style="width:0;left:50%"></i><span class="bar-number-group" style="left:calc(50% + 8px)"><strong class="bar-daily-change"></strong><small class="bar-context"><b></b><span></span></small></span></div>`;
-      if (!staticMode) $(".bar-sector-label", row).addEventListener("click", () => openSectorHistory(item.ticker));
+      if (historyEnabled) $(".bar-sector-label", row).addEventListener("click", () => openSectorHistory(item.ticker));
       existingRows.set(item.ticker, row);
     }
     chart.append(existingRows.get(item.ticker));
@@ -871,7 +877,7 @@ $("#barCustomStart").addEventListener("change", event => {
   }
   loadPeriodPerformance(false);
 });
-if (!staticMode) $$('[data-history-ticker]').forEach(button => button.addEventListener("click", () => openSectorHistory(button.dataset.historyTicker)));
+if (historyEnabled) $$('[data-history-ticker]').forEach(button => button.addEventListener("click", () => openSectorHistory(button.dataset.historyTicker)));
 $$('[data-history-range]').forEach(button => button.addEventListener("click", () => {
   const range = button.dataset.historyRange;
   if (range === "custom" && !$("#historyStartDate").value) { $("#historyStartDate").focus(); return; }
@@ -893,8 +899,8 @@ $("#historyStartDate").addEventListener("change", event => {
 });
 function addHistoryComparison() {
   const input = $("#historyComparisonInput");
-  const ticker = input.value.trim().toUpperCase();
-  const compact = ticker.replaceAll("-", "").replaceAll(".", "").replaceAll("^", "").replaceAll("=", "");
+  const ticker = normalizeHistoryTicker(input.value);
+  const compact = ticker.replaceAll("-", "").replaceAll(".", "").replaceAll("^", "").replaceAll("=", "").replaceAll("/", "");
   const defaults = historyTicker === "SPY" ? ["RSP", "^IXIC"] : ["SPY", "^IXIC"];
   const current = customHistoryComparisons();
   let message = "";
@@ -916,6 +922,24 @@ $("#historyComparisons").addEventListener("click", event => {
   saveHistoryComparisons(customHistoryComparisons().filter(ticker => ticker !== button.dataset.removeComparison));
   loadSectorHistory(false);
 });
+const historyTickerLookup = $("#historyTickerLookup");
+const historyTickerOpen = $("#historyTickerOpen");
+if (historyEnabled && historyTickerLookup && historyTickerOpen) {
+  const allowed = new Set((runtimeConfig.historyTickers || []).map(normalizeHistoryTicker));
+  const openLookup = () => {
+    const ticker = normalizeHistoryTicker(historyTickerLookup.value);
+    const message = !ticker ? "Enter a ticker symbol." : allowed.size && !allowed.has(ticker) ? "That ticker is not in the daily history list." : "";
+    historyTickerLookup.setCustomValidity(message);
+    if (message) { historyTickerLookup.reportValidity(); return; }
+    historyTickerLookup.value = ticker;
+    openSectorHistory(ticker);
+  };
+  historyTickerOpen.addEventListener("click", openLookup);
+  historyTickerLookup.addEventListener("input", event => event.target.setCustomValidity(""));
+  historyTickerLookup.addEventListener("keydown", event => {
+    if (event.key === "Enter") { event.preventDefault(); openLookup(); }
+  });
+}
 const sectorHistoryChart = $("#sectorHistoryChart");
 sectorHistoryChart.addEventListener("mousemove", event => {
   if (!historyChartState) return;

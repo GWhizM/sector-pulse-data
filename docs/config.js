@@ -1,1 +1,1 @@
-window.SECTOR_PULSE_CONFIG = {"staticMode":true,"apiBase":"https://sector-pulse-api.andrew-2f4.workers.dev"};
+window.SECTOR_PULSE_CONFIG = {"staticMode":true,"apiBase":"https://sector-pulse-api.andrew-2f4.workers.dev","historyEnabled":true,"historyTickers":["XLC","XLY","XLP","XLE","XLF","XLV","XLI","XLB","XLRE","XLK","XLU","SPY","RSP","COWZ","QQQ","^IXIC","KIE","KCE","RSPH","RSPU","IGF","PHO","IXC","STIP","RAAX","BRK/B"]};
