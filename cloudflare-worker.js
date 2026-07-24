@@ -8,14 +8,19 @@ export default {
       return json({ error: "Method not allowed" }, 405);
     }
     const snapshot = await env.SECTOR_PULSE_DATA.get("snapshot-latest", "json");
+    if (url.pathname === "/api/health") {
+      return json({
+        ok: true,
+        hasSnapshot: Boolean(snapshot),
+        schemaVersion: snapshot?.schemaVersion ?? null,
+        generatedAt: snapshot?.generatedAt ?? null,
+      });
+    }
     if (!snapshot) {
       return json({ error: "No successful market snapshot has been published yet" }, 503);
     }
     if (url.pathname === "/api/market") return json(snapshot.momentum);
     if (url.pathname === "/api/contributions") return json(snapshot.contributions);
-    if (url.pathname === "/api/health") {
-      return json({ ok: true, schemaVersion: snapshot.schemaVersion, generatedAt: snapshot.generatedAt });
-    }
     return json({ error: "Not found" }, 404);
   },
 };
