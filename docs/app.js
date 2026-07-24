@@ -793,13 +793,15 @@ function activateTab(button, persist = true) {
   setTimeout(smartRefreshActiveTab, 0);
 }
 
-const defaultTabOrder = ["momentum", "valuation", "contribution"];
+const defaultTabOrder = staticMode
+  ? ["contribution", "momentum", "valuation"]
+  : ["momentum", "valuation", "contribution"];
 let suppressTabClick = false;
 
 function restoreTabOrder() {
   const tabs = $(".tabs");
   let saved = [];
-  try { saved = JSON.parse(localStorage.getItem("sectorPulseTabOrder") || "[]"); } catch (_) { saved = []; }
+  try { saved = staticMode ? [] : JSON.parse(localStorage.getItem("sectorPulseTabOrder") || "[]"); } catch (_) { saved = []; }
   const order = [...new Set([...saved.filter(name => defaultTabOrder.includes(name)), ...defaultTabOrder])];
   const byName = new Map($$(".tab", tabs).map(tab => [tab.dataset.tab, tab]));
   order.forEach(name => tabs.append(byName.get(name)));
@@ -961,9 +963,11 @@ if (valuationRefreshButton && watchlistInput) {
   watchlistInput.value = localStorage.getItem("sectorPulseWatchlist") || "RSPH, KIE, KCE, IGF";
 }
 
-const savedTabName = localStorage.getItem("sectorPulseActiveTab");
+const savedTabName = staticMode ? "contribution" : localStorage.getItem("sectorPulseActiveTab");
 const savedTab = $$('.tab').find(button => button.dataset.tab === savedTabName);
 if (savedTab) activateTab(savedTab, false);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) smartRefreshActiveTab(); });
 window.addEventListener("focus", smartRefreshActiveTab);
-configureTimer(); load(false);
+configureTimer();
+if (staticMode) loadContributions(false);
+else load(false);
