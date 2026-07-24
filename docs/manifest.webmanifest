@@ -1,0 +1,17 @@
+{
+  "name": "Sector Pulse",
+  "short_name": "Sector Pulse",
+  "description": "S&P 500 sector momentum, volatility, and performance dashboard.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#07101f",
+  "theme_color": "#0a1224",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
