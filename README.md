@@ -25,6 +25,10 @@ Create these GitHub Actions secrets:
 The Cloudflare token needs only `Workers KV Storage: Write` for the selected
 account. The workflow writes one KV key named `snapshot-latest`.
 
+After the first manual run succeeds, create the repository Actions variable
+`UPDATER_ENABLED` with the value `true`. Scheduled runs remain safely skipped
+until that variable is present.
+
 ## Run locally
 
 ```bash
