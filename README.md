@@ -10,6 +10,10 @@ The scheduled GitHub workflow:
 - writes a single JSON snapshot to Cloudflare Workers KV; and
 - retains the last successful snapshot when a data source fails.
 
+A second workflow runs once after each market close and publishes five years of
+daily history for the sector ETFs, benchmarks, and the curated history-only
+watchlist. It writes one additional KV key named `history-latest`.
+
 The updater contains no Cloudflare token, personal watchlist, browser settings,
 database, or private Sector Pulse interface. Cloudflare credentials are supplied
 only through encrypted GitHub Actions secrets.

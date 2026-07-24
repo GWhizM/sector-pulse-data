@@ -3,6 +3,7 @@ import unittest
 
 import pandas as pd
 
+from sector_pulse_history import HISTORY_SYMBOLS, build_bulk_payload, build_history
 from sector_pulse_updater import classify_rsi, completed_bar_endpoint, finite, wilder_rsi
 
 
@@ -25,6 +26,22 @@ class UpdaterTests(unittest.TestCase):
         after_close = datetime(2026, 7, 24, 14, 36, tzinfo=timezone.utc)
         self.assertEqual(completed_bar_endpoint(stamp, before_close), stamp)
         self.assertEqual(completed_bar_endpoint(stamp, after_close), stamp + pd.Timedelta(minutes=5))
+
+    def test_history_bundle_keeps_requested_display_symbol(self):
+        dates = pd.date_range("2026-07-20", periods=3, freq="B")
+        columns = pd.MultiIndex.from_product([["Close", "Adj Close"], list(HISTORY_SYMBOLS)])
+        frame = pd.DataFrame(index=dates, columns=columns, dtype=float)
+        for offset, ticker in enumerate(HISTORY_SYMBOLS):
+            frame[("Close", ticker)] = [100 + offset, 101 + offset, 102 + offset]
+            frame[("Adj Close", ticker)] = [100 + offset, 101 + offset, 102 + offset]
+        history = build_history(frame, datetime(2026, 7, 24, tzinfo=timezone.utc))
+        self.assertEqual(history["symbols"]["BRK-B"]["displayTicker"], "BRK/B")
+        self.assertEqual(len(history["symbols"]), len(HISTORY_SYMBOLS))
+        self.assertEqual(len(history["symbols"]["KIE"]["points"]), 3)
+        payload = build_bulk_payload(history)
+        self.assertGreaterEqual(len(payload), len(HISTORY_SYMBOLS) + 3)
+        self.assertIn("history:BRK-B", {item["key"] for item in payload})
+        self.assertIn("history:custom-periods:2026", {item["key"] for item in payload})
 
 
 if __name__ == "__main__":
