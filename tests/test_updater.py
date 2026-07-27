@@ -4,7 +4,13 @@ import unittest
 import pandas as pd
 
 from sector_pulse_history import HISTORY_SYMBOLS, build_bulk_payload, build_history
-from sector_pulse_updater import classify_rsi, completed_bar_endpoint, finite, wilder_rsi
+from sector_pulse_updater import (
+    classify_rsi,
+    completed_bar_endpoint,
+    finite,
+    previous_completed_close,
+    wilder_rsi,
+)
 
 
 class UpdaterTests(unittest.TestCase):
@@ -26,6 +32,42 @@ class UpdaterTests(unittest.TestCase):
         after_close = datetime(2026, 7, 24, 14, 36, tzinfo=timezone.utc)
         self.assertEqual(completed_bar_endpoint(stamp, before_close), stamp)
         self.assertEqual(completed_bar_endpoint(stamp, after_close), stamp + pd.Timedelta(minutes=5))
+
+    def test_previous_close_when_daily_data_does_not_include_live_day(self):
+        daily = pd.Series(
+            [100.0, 101.0],
+            index=pd.to_datetime(["2026-07-23", "2026-07-24"]),
+        )
+        live = pd.Series(
+            [101.5],
+            index=pd.to_datetime(["2026-07-27T10:00:00-04:00"]),
+        )
+        self.assertEqual(previous_completed_close(daily, live), 101.0)
+
+    def test_previous_close_prefers_prior_intraday_close_when_daily_day_is_missing(self):
+        daily = pd.Series(
+            [63.67, 65.92],
+            index=pd.to_datetime(["2026-07-23", "2026-07-27"]),
+        )
+        live = pd.Series(
+            [64.89, 65.92],
+            index=pd.to_datetime([
+                "2026-07-24T16:00:00-04:00",
+                "2026-07-27T11:05:00-04:00",
+            ]),
+        )
+        self.assertEqual(previous_completed_close(daily, live), 64.89)
+
+    def test_previous_close_ignores_partial_daily_bar(self):
+        daily = pd.Series(
+            [100.0, 101.0, 101.4],
+            index=pd.to_datetime(["2026-07-23", "2026-07-24", "2026-07-27"]),
+        )
+        live = pd.Series(
+            [101.5],
+            index=pd.to_datetime(["2026-07-27T10:00:00-04:00"]),
+        )
+        self.assertEqual(previous_completed_close(daily, live), 101.0)
 
     def test_history_bundle_keeps_requested_display_symbol(self):
         dates = pd.date_range("2026-07-20", periods=3, freq="B")

@@ -95,6 +95,31 @@ def completed_bar_endpoint(stamp, now=None, minutes: int = 5) -> pd.Timestamp:
     return endpoint if now_stamp >= endpoint else stamp
 
 
+def market_date(stamp):
+    value = pd.Timestamp(stamp)
+    if value.tzinfo is not None:
+        value = value.tz_convert("America/New_York")
+    return value.date()
+
+
+def previous_completed_close(daily: pd.Series, live: pd.Series) -> float:
+    """Return the latest daily close strictly before the live trading date."""
+    closes = pd.to_numeric(daily, errors="coerce").dropna()
+    prices = pd.to_numeric(live, errors="coerce").dropna()
+    if len(closes) < 2:
+        raise RuntimeError("Two daily prices are required")
+    if prices.empty:
+        return float(closes.iloc[-2])
+    live_date = market_date(prices.index[-1])
+    completed_live = prices[[market_date(stamp) < live_date for stamp in prices.index]]
+    if not completed_live.empty:
+        return float(completed_live.iloc[-1])
+    completed = closes[[market_date(stamp) < live_date for stamp in closes.index]]
+    if completed.empty:
+        raise RuntimeError("A completed prior-day close is required")
+    return float(completed.iloc[-1])
+
+
 def build_momentum(daily: pd.DataFrame, generated_at: datetime) -> dict:
     rows = []
     for ticker, name in SECTORS.items():
@@ -155,7 +180,7 @@ def build_contributions(daily: pd.DataFrame, intraday: pd.DataFrame, generated_a
         live = series_from_download(intraday, ticker, "Close")
         if len(closes) < 2:
             raise RuntimeError(f"{ticker} does not have two daily prices")
-        previous = float(closes.iloc[-2])
+        previous = previous_completed_close(closes, live)
         current = float(live.iloc[-1]) if not live.empty else float(closes.iloc[-1])
         change = (current / previous - 1) * 100
         if not live.empty:
@@ -177,7 +202,7 @@ def build_contributions(daily: pd.DataFrame, intraday: pd.DataFrame, generated_a
     spy_live = series_from_download(intraday, "SPY", "Close")
     if len(spy_daily) < 2:
         raise RuntimeError("SPY does not have two daily prices")
-    spy_previous = float(spy_daily.iloc[-2])
+    spy_previous = previous_completed_close(spy_daily, spy_live)
     spy_current = float(spy_live.iloc[-1]) if not spy_live.empty else float(spy_daily.iloc[-1])
     spy_change = (spy_current / spy_previous - 1) * 100
     residual = spy_change - sum(float(item["contributionPct"]) for item in rows)
@@ -193,7 +218,7 @@ def build_contributions(daily: pd.DataFrame, intraday: pd.DataFrame, generated_a
         live = series_from_download(intraday, ticker, "Close")
         if len(closes) < 2:
             raise RuntimeError(f"{ticker} does not have two daily prices")
-        previous = float(closes.iloc[-2])
+        previous = previous_completed_close(closes, live)
         current = float(live.iloc[-1]) if not live.empty else float(closes.iloc[-1])
         benchmarks.append(
             {
@@ -211,7 +236,7 @@ def build_contributions(daily: pd.DataFrame, intraday: pd.DataFrame, generated_a
     return {
         "generatedAt": generated_at.isoformat(),
         "asOf": effective_as_of,
-        "marketDate": pd.Timestamp(spy_daily.index[-1]).date().isoformat(),
+        "marketDate": market_date(as_of if as_of is not None else spy_daily.index[-1]).isoformat(),
         "estimatedChangePct": finite(sum(float(item["contributionPct"]) for item in rows), 3),
         "spyChangePct": finite(spy_change, 3),
         "sectors": rows,
@@ -239,7 +264,7 @@ def build_snapshot() -> dict:
     )
     intraday = yf.download(
         tickers=[*SECTORS, *BENCHMARKS],
-        period="1d",
+        period="5d",
         interval="5m",
         group_by="ticker",
         auto_adjust=False,

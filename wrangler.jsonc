@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sector-pulse-api",
+  "main": "cloudflare-worker.js",
+  "compatibility_date": "2026-07-27",
+  "kv_namespaces": [
+    {
+      "binding": "SECTOR_PULSE_DATA",
+      "id": "81626648c1b1473ca050af5ed8e9057e"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/5 * * * 1-5"
+    ]
+  }
+}
