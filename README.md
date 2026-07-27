@@ -2,7 +2,7 @@
 
 Public, credential-free updater for the Sector Pulse research dashboard.
 
-The scheduled GitHub workflow:
+The Cloudflare Worker Cron Trigger dispatches the GitHub workflow:
 
 - runs every five minutes during regular U.S. market hours;
 - downloads public market data through `yfinance`;
@@ -10,7 +10,7 @@ The scheduled GitHub workflow:
 - writes a single JSON snapshot to Cloudflare Workers KV; and
 - retains the last successful snapshot when a data source fails.
 
-A second workflow runs once after each market close and publishes five years of
+A second workflow is dispatched once after each market close and publishes five years of
 daily history for the sector ETFs, benchmarks, and the curated history-only
 watchlist. It writes one additional KV key named `history-latest`.
 
@@ -32,6 +32,21 @@ account. The workflow writes one KV key named `snapshot-latest`.
 After the first manual run succeeds, create the repository Actions variable
 `UPDATER_ENABLED` with the value `true`. Scheduled runs remain safely skipped
 until that variable is present.
+
+## Reliable scheduler
+
+Add a fine-grained GitHub personal access token to the Worker as an encrypted
+secret named `GITHUB_ACTIONS_TOKEN`. Restrict the token to this repository and
+grant only `Actions: Read and write`. Then add one Cloudflare Cron Trigger:
+
+```text
+*/5 * * * 1-5
+```
+
+Cloudflare evaluates the cron expression in UTC. The Worker converts each event
+to America/New_York time, dispatches the market workflow every five minutes from
+9:30 a.m. through 4:00 p.m. on weekdays, and dispatches daily history at
+4:15 p.m. Other trigger events return without contacting GitHub.
 
 ## Run locally
 

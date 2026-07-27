@@ -170,6 +170,10 @@ function marketIsOpen() {
   const minute = Number(parts.hour) * 60 + Number(parts.minute);
   return minute >= 570 && minute < 960;
 }
+function staleDuringMarket(iso) {
+  const timestamp = new Date(iso).getTime();
+  return staticMode && marketIsOpen() && Number.isFinite(timestamp) && Date.now() - timestamp > 20 * 60 * 1000;
+}
 function smartRefreshActiveTab() {
   if (document.hidden || !marketIsOpen()) return;
   const active = $(".tab.active")?.dataset.tab;
@@ -726,6 +730,10 @@ function renderContributions(data) {
   $("#contributionAsOf").textContent = formatTime(data.asOf);
   if (contributionPeriod === "today") $("#contributionMethod").textContent = data.methodology;
   $("#contributionSource").textContent = `Data source: ${data.source}${data.cached ? " · cached" : ""}`;
+  if (staleDuringMarket(data.asOf)) {
+    $("#contributionError").textContent = "Prices have not been published for more than 20 minutes and may be stale. Refresh only checks for an already-published snapshot; it cannot start the updater.";
+    $("#contributionError").classList.remove("hidden");
+  }
   if (contributionPeriod === "today") renderContributionBars(data);
   renderContributionDonut(data);
   contributionsLoaded = true;

@@ -1,4 +1,5 @@
 const RANGE_DAYS = { "1m": 31, "3m": 93, "6m": 186, "1y": 366, "3y": 1096, "5y": 1827 };
+const GITHUB_API = "https://api.github.com/repos/GWhizM/sector-pulse-data/actions/workflows";
 
 export default {
   async fetch(request, env) {
@@ -12,9 +13,10 @@ export default {
 
     try {
       if (url.pathname === "/api/health") {
-        const [snapshot, history] = await Promise.all([
+        const [snapshot, history, scheduler] = await Promise.all([
           env.SECTOR_PULSE_DATA.get("snapshot-latest", "json"),
           env.SECTOR_PULSE_DATA.get("history:meta", "json"),
+          env.SECTOR_PULSE_DATA.get("scheduler:last-dispatch", "json"),
         ]);
         return json({
           ok: true,
@@ -23,6 +25,7 @@ export default {
           schemaVersion: snapshot?.schemaVersion ?? null,
           generatedAt: snapshot?.generatedAt ?? null,
           historyGeneratedAt: history?.generatedAt ?? null,
+          scheduler: scheduler ?? null,
         });
       }
 
@@ -66,7 +69,57 @@ export default {
       return json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }
   },
+
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(runScheduledDispatch(controller.scheduledTime, env));
+  },
 };
+
+async function runScheduledDispatch(scheduledTime, env) {
+  const target = scheduledTarget(new Date(scheduledTime));
+  if (!target) return;
+  if (!env.GITHUB_ACTIONS_TOKEN) throw new Error("GITHUB_ACTIONS_TOKEN is not configured");
+
+  const response = await fetch(`${GITHUB_API}/${target.workflow}/dispatches`, {
+    method: "POST",
+    headers: {
+      "Accept": "application/vnd.github+json",
+      "Authorization": `Bearer ${env.GITHUB_ACTIONS_TOKEN}`,
+      "Content-Type": "application/json",
+      "User-Agent": "sector-pulse-cloudflare-scheduler",
+      "X-GitHub-Api-Version": "2026-03-10",
+    },
+    body: JSON.stringify({ ref: "main" }),
+  });
+
+  const result = {
+    ok: response.ok,
+    workflow: target.workflow,
+    scheduledFor: new Date(scheduledTime).toISOString(),
+    dispatchedAt: new Date().toISOString(),
+    githubStatus: response.status,
+  };
+  await env.SECTOR_PULSE_DATA.put("scheduler:last-dispatch", JSON.stringify(result));
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`GitHub workflow dispatch failed (${response.status}): ${detail.slice(0, 500)}`);
+  }
+}
+
+function scheduledTarget(date) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  if (["Sat", "Sun"].includes(parts.weekday)) return null;
+  const minute = Number(parts.hour) * 60 + Number(parts.minute);
+  if (minute >= 570 && minute <= 960) return { workflow: "update-market.yml" };
+  if (minute === 975) return { workflow: "update-history.yml" };
+  return null;
+}
 
 function normalizeTicker(value) {
   const ticker = String(value || "").trim().toUpperCase();

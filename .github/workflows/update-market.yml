@@ -2,13 +2,6 @@ name: Update Sector Pulse market snapshot
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "30-59/5 9 * * 1-5"
-      timezone: "America/New_York"
-    - cron: "*/5 10-15 * * 1-5"
-      timezone: "America/New_York"
-    - cron: "0 16 * * 1-5"
-      timezone: "America/New_York"
 
 concurrency:
   group: sector-pulse-market-update
@@ -19,7 +12,7 @@ permissions:
 
 jobs:
   update:
-    if: github.event_name == 'workflow_dispatch' || vars.UPDATER_ENABLED == 'true'
+    if: vars.UPDATER_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
