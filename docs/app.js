@@ -355,7 +355,16 @@ function savedHistoryComparisons() {
 
 function customHistoryComparisons(ticker = historyTicker) {
   const saved = savedHistoryComparisons();
-  return [...new Set((saved[ticker] || []).map(normalizeHistoryTicker))].slice(0, 3);
+  const comparisons = [...new Set((saved[ticker] || []).map(normalizeHistoryTicker))].slice(0, 3);
+  if (!staticMode) return comparisons;
+  const allowed = new Set((runtimeConfig.historyTickers || []).map(normalizeHistoryTicker));
+  const supported = comparisons.filter(item => allowed.has(item));
+  if (supported.length !== comparisons.length) {
+    if (supported.length) saved[ticker] = supported;
+    else delete saved[ticker];
+    localStorage.setItem("sectorPulseHistoryComparisons", JSON.stringify(saved));
+  }
+  return supported;
 }
 
 function saveHistoryComparisons(items) {
