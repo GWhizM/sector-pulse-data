@@ -4,6 +4,10 @@ const runtimeConfig = window.SECTOR_PULSE_CONFIG || {};
 const staticMode = Boolean(runtimeConfig.staticMode && runtimeConfig.apiBase);
 const historyEnabled = !staticMode || Boolean(runtimeConfig.historyEnabled);
 const apiUrl = path => staticMode ? `${runtimeConfig.apiBase.replace(/\/$/, "")}${path}` : path;
+function freshApiRequest(path) {
+  const separator = path.includes("?") ? "&" : "?";
+  return fetch(apiUrl(`${path}${separator}_=${Date.now()}`), { cache: "no-store" });
+}
 const defaults = { period: 14, oversold: 30, overbought: 70 };
 let settings = { ...defaults, ...JSON.parse(localStorage.getItem("sectorPulseSettings") || "{}") };
 if (staticMode) settings.period = 14;
@@ -159,7 +163,7 @@ async function load(force=false) {
   $("#refreshButton").disabled=true; $("#refreshButton").textContent="Loading…"; $("#errorBox").classList.add("hidden");
   try {
     const q=new URLSearchParams({period:settings.period,oversold:settings.oversold,overbought:settings.overbought,tickers:momentumTickersInput?.value.trim() || "",force:force?1:0});
-    const response=await fetch(apiUrl(`/api/market?${q}`)); const data=await response.json(); if(!response.ok) throw new Error(data.error||"Unknown data error"); render(data);smartRefreshAt.momentum=Date.now();
+    const response=await freshApiRequest(`/api/market?${q}`); const data=await response.json(); if(!response.ok) throw new Error(data.error||"Unknown data error"); render(data);smartRefreshAt.momentum=Date.now();
   } catch(error) { $("#errorBox").textContent=`${error.message} Existing cards, if any, have not been replaced.`; $("#errorBox").classList.remove("hidden"); }
   finally { momentumLoading=false; $("#refreshButton").disabled=false; $("#refreshButton").textContent="↻ Refresh Page"; }
 }
@@ -784,7 +788,7 @@ async function loadContributions(force = false) {
   const button = $("#contributionRefresh");
   button.disabled = true; button.textContent = "Loading…"; $("#contributionError").classList.add("hidden");
   try {
-    const response = await fetch(apiUrl(`/api/contributions?force=${force ? 1 : 0}`));
+    const response = await freshApiRequest(`/api/contributions?force=${force ? 1 : 0}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Unknown contribution error");
     renderContributions(data);
