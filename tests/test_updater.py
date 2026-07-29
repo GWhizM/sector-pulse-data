@@ -14,6 +14,18 @@ from sector_pulse_updater import (
 
 
 class UpdaterTests(unittest.TestCase):
+    def test_rsi_uses_wilder_simple_average_seed(self):
+        values = pd.Series(
+            [
+                44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10,
+                45.42, 45.84, 46.08, 45.89, 46.03, 45.61, 46.28,
+                46.28, 46.00, 46.03, 46.41, 46.22, 45.64, 46.21,
+            ]
+        )
+        result = wilder_rsi(values, 14)
+        self.assertAlmostEqual(float(result.iloc[14]), 70.46413502109705)
+        self.assertAlmostEqual(float(result.iloc[15]), 66.24961855355505)
+
     def test_wilder_rsi_rises_for_rising_series(self):
         values = pd.Series(range(1, 80), dtype=float)
         self.assertEqual(float(wilder_rsi(values, 14).dropna().iloc[-1]), 100.0)

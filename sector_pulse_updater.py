@@ -65,8 +65,21 @@ def wilder_rsi(close: pd.Series, period: int = 14) -> pd.Series:
     delta = values.diff()
     gains = delta.clip(lower=0)
     losses = -delta.clip(upper=0)
-    avg_gain = gains.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-    avg_loss = losses.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    avg_gain = pd.Series(float("nan"), index=values.index, dtype=float)
+    avg_loss = pd.Series(float("nan"), index=values.index, dtype=float)
+    if len(values) <= period:
+        return avg_gain
+
+    avg_gain.iloc[period] = gains.iloc[1 : period + 1].mean()
+    avg_loss.iloc[period] = losses.iloc[1 : period + 1].mean()
+    for position in range(period + 1, len(values)):
+        avg_gain.iloc[position] = (
+            avg_gain.iloc[position - 1] * (period - 1) + gains.iloc[position]
+        ) / period
+        avg_loss.iloc[position] = (
+            avg_loss.iloc[position - 1] * (period - 1) + losses.iloc[position]
+        ) / period
+
     relative_strength = avg_gain / avg_loss.replace(0, float("nan"))
     result = 100 - (100 / (1 + relative_strength))
     result = result.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
