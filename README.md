@@ -5,7 +5,8 @@ Public, credential-free updater for the Sector Pulse research dashboard.
 The Cloudflare Worker Cron Trigger dispatches the GitHub workflow:
 
 - runs every five minutes during regular U.S. market hours;
-- downloads public market data through `yfinance`;
+- downloads daily market data through `yfinance` and current prices through
+  Yahoo's direct chart responses;
 - retries stale provider responses up to three times per scheduled cycle;
 - calculates Wilder RSI and estimated sector contribution;
 - writes a single JSON snapshot to Cloudflare Workers KV; and

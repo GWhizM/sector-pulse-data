@@ -6,17 +6,64 @@ import pandas as pd
 
 from sector_pulse_history import HISTORY_SYMBOLS, build_bulk_payload, build_history
 from sector_pulse_updater import (
+    BENCHMARKS,
+    SECTORS,
+    build_live_contributions,
     classify_rsi,
     completed_bar_endpoint,
     download_market_data,
     finite,
     previous_completed_close,
+    parse_chart_quote,
     wilder_rsi,
 )
 from snapshot_guard import should_publish
 
 
 class UpdaterTests(unittest.TestCase):
+    def test_direct_chart_quote_parser_uses_live_price_and_time(self):
+        payload = {
+            "chart": {
+                "result": [
+                    {
+                        "meta": {
+                            "regularMarketPrice": 770.74,
+                            "chartPreviousClose": 769.79,
+                            "regularMarketTime": 1786032519,
+                        }
+                    }
+                ]
+            }
+        }
+
+        result = parse_chart_quote("SPY", payload)
+
+        self.assertEqual(result["price"], 770.74)
+        self.assertEqual(result["previousClose"], 769.79)
+        self.assertEqual(result["asOf"].tzinfo, timezone.utc)
+
+    def test_live_contributions_reconcile_to_spy_change(self):
+        now = datetime(2026, 8, 6, 15, 8, tzinfo=timezone.utc)
+        quotes = {
+            ticker: {
+                "ticker": ticker,
+                "price": 101.0 + index / 100,
+                "previousClose": 100.0,
+                "asOf": now,
+            }
+            for index, ticker in enumerate([*SECTORS, *BENCHMARKS])
+        }
+
+        result = build_live_contributions(quotes, now)
+
+        self.assertEqual(result["marketDate"], "2026-08-06")
+        self.assertAlmostEqual(
+            sum(item["contributionPct"] for item in result["sectors"]),
+            result["spyChangePct"],
+            places=2,
+        )
+        self.assertIn("direct chart", result["source"])
+
     def test_snapshot_guard_rejects_older_market_date(self):
         candidate = {"contributions": {"marketDate": "2026-08-05", "asOf": "2026-08-05T16:00:00-04:00"}}
         current = {"marketDate": "2026-08-06", "asOf": "2026-08-06T10:30:00-04:00"}

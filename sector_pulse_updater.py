@@ -8,6 +8,8 @@ import math
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 import pandas as pd
 import yfinance as yf
@@ -102,6 +104,49 @@ def download_market_data(
     raise RuntimeError(
         f"Market-data download failed after {attempts} attempts: {last_error}"
     ) from last_error
+
+
+def parse_chart_quote(ticker: str, payload: dict) -> dict:
+    results = payload.get("chart", {}).get("result") or []
+    if not results:
+        raise RuntimeError(f"Yahoo returned no chart result for {ticker}")
+    meta = results[0].get("meta", {})
+    current = meta.get("regularMarketPrice")
+    previous = meta.get("chartPreviousClose", meta.get("previousClose"))
+    market_time = meta.get("regularMarketTime")
+    if current is None or previous is None or market_time is None or float(previous) <= 0:
+        raise RuntimeError(f"Yahoo returned an incomplete live quote for {ticker}")
+    return {
+        "ticker": ticker,
+        "price": float(current),
+        "previousClose": float(previous),
+        "asOf": datetime.fromtimestamp(int(market_time), timezone.utc),
+    }
+
+
+def download_live_quotes(tickers: list[str], attempts: int = 3) -> dict[str, dict]:
+    """Fetch current quotes without yfinance's occasionally stale batch cache."""
+    quotes = {}
+    for ticker in tickers:
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                symbol = quote(ticker, safe="")
+                request = Request(
+                    f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=5m&range=1d",
+                    headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0 Sector-Pulse/1.0"},
+                )
+                with urlopen(request, timeout=15) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                quotes[ticker] = parse_chart_quote(ticker, payload)
+                break
+            except Exception as error:
+                last_error = error
+                if attempt < attempts:
+                    time.sleep(2 ** (attempt - 1))
+        else:
+            raise RuntimeError(f"Live quote failed for {ticker}: {last_error}") from last_error
+    return quotes
 
 
 def wilder_rsi(close: pd.Series, period: int = 14) -> pd.Series:
@@ -306,6 +351,61 @@ def build_contributions(daily: pd.DataFrame, intraday: pd.DataFrame, generated_a
     }
 
 
+def build_live_contributions(quotes: dict[str, dict], generated_at: datetime) -> dict:
+    rows = []
+    for ticker, name in SECTORS.items():
+        live = quotes[ticker]
+        change = (float(live["price"]) / float(live["previousClose"]) - 1) * 100
+        rows.append(
+            {
+                "ticker": ticker,
+                "name": name,
+                "price": finite(live["price"], 2),
+                "weightPct": finite(FALLBACK_WEIGHTS[ticker] * 100, 2),
+                "equalWeightPct": None,
+                "changePct": finite(change, 2),
+                "contributionPct": finite(FALLBACK_WEIGHTS[ticker] * change, 3),
+            }
+        )
+
+    spy = quotes["SPY"]
+    spy_change = (float(spy["price"]) / float(spy["previousClose"]) - 1) * 100
+    residual = spy_change - sum(float(item["contributionPct"]) for item in rows)
+    absolute_total = sum(abs(float(item["contributionPct"])) for item in rows)
+    for item in rows:
+        share = abs(float(item["contributionPct"])) / absolute_total if absolute_total else float(item["weightPct"]) / 100
+        item["contributionPct"] = finite(float(item["contributionPct"]) + residual * share, 3)
+    rows.sort(key=lambda item: float(item["contributionPct"]), reverse=True)
+
+    benchmarks = []
+    for ticker in BENCHMARKS:
+        live = quotes[ticker]
+        change = (float(live["price"]) / float(live["previousClose"]) - 1) * 100
+        benchmarks.append(
+            {
+                "ticker": ticker,
+                "price": finite(live["price"], 2),
+                "changePct": finite(change, 3),
+            }
+        )
+
+    as_of = max(item["asOf"] for item in quotes.values())
+    return {
+        "generatedAt": generated_at.isoformat(),
+        "asOf": as_of.isoformat(),
+        "marketDate": market_date(as_of).isoformat(),
+        "estimatedChangePct": finite(sum(float(item["contributionPct"]) for item in rows), 3),
+        "spyChangePct": finite(spy_change, 3),
+        "sectors": rows,
+        "benchmarks": benchmarks,
+        "source": "Yahoo Finance direct chart quotes; built-in fallback sector allocations",
+        "methodology": (
+            "Estimated contribution starts with sector weight Ã— sector ETF price change since the prior close. "
+            "The ETF-tracking difference versus SPY is distributed in proportion to absolute sector impact."
+        ),
+    }
+
+
 def build_snapshot() -> dict:
     generated_at = datetime.now(timezone.utc)
     tickers = [*SECTORS, "^VIX", *BENCHMARKS]
@@ -314,16 +414,24 @@ def build_snapshot() -> dict:
         period="1y",
         interval="1d",
     )
-    intraday = download_market_data(
-        [*SECTORS, *BENCHMARKS],
-        period="5d",
-        interval="5m",
-    )
+    live_tickers = [*SECTORS, *BENCHMARKS]
+    try:
+        contributions = build_live_contributions(
+            download_live_quotes(live_tickers),
+            generated_at,
+        )
+    except Exception:
+        intraday = download_market_data(
+            live_tickers,
+            period="5d",
+            interval="5m",
+        )
+        contributions = build_contributions(daily, intraday, generated_at)
     return {
         "schemaVersion": 1,
         "generatedAt": generated_at.isoformat(),
         "momentum": build_momentum(daily, generated_at),
-        "contributions": build_contributions(daily, intraday, generated_at),
+        "contributions": contributions,
     }
 
 
