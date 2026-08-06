@@ -8,7 +8,8 @@ The Cloudflare Worker Cron Trigger dispatches the GitHub workflow:
 - downloads public market data through `yfinance`;
 - calculates Wilder RSI and estimated sector contribution;
 - writes a single JSON snapshot to Cloudflare Workers KV; and
-- retains the last successful snapshot when a data source fails.
+- retains the last successful snapshot when a data source fails or returns data
+  older than the snapshot already published.
 
 A second workflow is dispatched once after each market close and publishes five years of
 daily history for the sector ETFs, benchmarks, and the curated history-only

@@ -13,9 +13,35 @@ from sector_pulse_updater import (
     previous_completed_close,
     wilder_rsi,
 )
+from snapshot_guard import should_publish
 
 
 class UpdaterTests(unittest.TestCase):
+    def test_snapshot_guard_rejects_older_market_date(self):
+        candidate = {"contributions": {"marketDate": "2026-08-05", "asOf": "2026-08-05T16:00:00-04:00"}}
+        current = {"marketDate": "2026-08-06", "asOf": "2026-08-06T10:30:00-04:00"}
+
+        publish, reason = should_publish(candidate, current)
+
+        self.assertFalse(publish)
+        self.assertIn("older", reason)
+
+    def test_snapshot_guard_rejects_older_intraday_bar(self):
+        candidate = {"contributions": {"marketDate": "2026-08-06", "asOf": "2026-08-06T10:25:00-04:00"}}
+        current = {"marketDate": "2026-08-06", "asOf": "2026-08-06T10:30:00-04:00"}
+
+        publish, _ = should_publish(candidate, current)
+
+        self.assertFalse(publish)
+
+    def test_snapshot_guard_accepts_newer_intraday_bar(self):
+        candidate = {"contributions": {"marketDate": "2026-08-06", "asOf": "2026-08-06T10:35:00-04:00"}}
+        current = {"marketDate": "2026-08-06", "asOf": "2026-08-06T10:30:00-04:00"}
+
+        publish, _ = should_publish(candidate, current)
+
+        self.assertTrue(publish)
+
     @patch("sector_pulse_updater.time.sleep")
     @patch("sector_pulse_updater.yf.download")
     def test_download_retries_transient_failure_without_threads(self, download, sleep):

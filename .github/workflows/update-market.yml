@@ -29,7 +29,17 @@ jobs:
       - name: Build snapshot
         run: python sector_pulse_updater.py --output snapshot.json
 
+      - name: Protect newer published data
+        id: freshness
+        shell: bash
+        run: |
+          python snapshot_guard.py \
+            --candidate snapshot.json \
+            --current-url "https://sector-pulse-api.andrew-2f4.workers.dev/api/contributions" \
+            >> "$GITHUB_OUTPUT"
+
       - name: Publish latest successful snapshot
+        if: steps.freshness.outputs.publish == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
