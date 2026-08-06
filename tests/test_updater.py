@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -7,6 +8,7 @@ from sector_pulse_history import HISTORY_SYMBOLS, build_bulk_payload, build_hist
 from sector_pulse_updater import (
     classify_rsi,
     completed_bar_endpoint,
+    download_market_data,
     finite,
     previous_completed_close,
     wilder_rsi,
@@ -14,6 +16,24 @@ from sector_pulse_updater import (
 
 
 class UpdaterTests(unittest.TestCase):
+    @patch("sector_pulse_updater.time.sleep")
+    @patch("sector_pulse_updater.yf.download")
+    def test_download_retries_transient_failure_without_threads(self, download, sleep):
+        frame = pd.DataFrame(
+            {"Close": [100.0, 101.0]},
+            index=pd.date_range("2026-08-05", periods=2, freq="D"),
+        )
+        download.side_effect = [RuntimeError("database is locked"), frame]
+
+        result = download_market_data(
+            ["SPY"], period="5d", interval="5m"
+        )
+
+        self.assertIs(result, frame)
+        self.assertEqual(download.call_count, 2)
+        self.assertFalse(download.call_args.kwargs["threads"])
+        sleep.assert_called_once_with(1)
+
     def test_rsi_uses_wilder_simple_average_seed(self):
         values = pd.Series(
             [

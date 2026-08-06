@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -58,6 +59,49 @@ def series_from_download(frame: pd.DataFrame, ticker: str, field: str) -> pd.Ser
     if field in frame.columns:
         return pd.to_numeric(frame[field], errors="coerce").dropna()
     return pd.Series(dtype=float)
+
+
+def download_market_data(
+    tickers: list[str],
+    *,
+    period: str,
+    interval: str,
+    attempts: int = 3,
+) -> pd.DataFrame:
+    """Download all requested symbols serially, retrying transient provider failures."""
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            frame = yf.download(
+                tickers=tickers,
+                period=period,
+                interval=interval,
+                group_by="ticker",
+                auto_adjust=False,
+                progress=False,
+                threads=False,
+                timeout=30,
+            )
+            missing = [
+                ticker
+                for ticker in tickers
+                if series_from_download(frame, ticker, "Close").empty
+            ]
+            if frame.empty:
+                raise RuntimeError("The market-data provider returned no prices")
+            if missing:
+                raise RuntimeError(
+                    "The market-data provider omitted: " + ", ".join(missing)
+                )
+            return frame
+        except Exception as error:
+            last_error = error
+            if attempt < attempts:
+                time.sleep(2 ** (attempt - 1))
+
+    raise RuntimeError(
+        f"Market-data download failed after {attempts} attempts: {last_error}"
+    ) from last_error
 
 
 def wilder_rsi(close: pd.Series, period: int = 14) -> pd.Series:
@@ -265,28 +309,16 @@ def build_contributions(daily: pd.DataFrame, intraday: pd.DataFrame, generated_a
 def build_snapshot() -> dict:
     generated_at = datetime.now(timezone.utc)
     tickers = [*SECTORS, "^VIX", *BENCHMARKS]
-    daily = yf.download(
-        tickers=tickers,
+    daily = download_market_data(
+        tickers,
         period="1y",
         interval="1d",
-        group_by="ticker",
-        auto_adjust=False,
-        progress=False,
-        threads=True,
-        timeout=30,
     )
-    intraday = yf.download(
-        tickers=[*SECTORS, *BENCHMARKS],
+    intraday = download_market_data(
+        [*SECTORS, *BENCHMARKS],
         period="5d",
         interval="5m",
-        group_by="ticker",
-        auto_adjust=False,
-        progress=False,
-        threads=True,
-        timeout=30,
     )
-    if daily.empty:
-        raise RuntimeError("The market-data provider returned no daily prices")
     return {
         "schemaVersion": 1,
         "generatedAt": generated_at.isoformat(),
