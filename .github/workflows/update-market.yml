@@ -3,10 +3,6 @@ name: Update Sector Pulse market snapshot
 on:
   workflow_dispatch:
 
-concurrency:
-  group: sector-pulse-market-update
-  cancel-in-progress: true
-
 permissions:
   contents: read
 

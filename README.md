@@ -8,6 +8,8 @@ The Cloudflare Worker Cron Trigger dispatches the GitHub workflow:
 - downloads daily market data through `yfinance` and current prices through
   Yahoo's direct chart responses;
 - retries stale provider responses up to three times per scheduled cycle;
+- allows delayed GitHub-hosted jobs to finish instead of cancelling them when
+  the next five-minute trigger arrives;
 - calculates Wilder RSI and estimated sector contribution;
 - writes a single JSON snapshot to Cloudflare Workers KV; and
 - retains the last successful snapshot when a data source fails or returns data
