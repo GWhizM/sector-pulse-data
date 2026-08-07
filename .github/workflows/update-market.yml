@@ -10,8 +10,10 @@ on:
       - "snapshot_guard.py"
   schedule:
     # GitHub is a no-cost fallback if the Cloudflare Cron Trigger misses a cycle.
-    # The offset avoids GitHub's busiest top-of-hour scheduling window.
-    - cron: "2-59/5 13-21 * * 1-5"
+    # Use GitHub's canonical five-minute syntax and let the job's market-hours
+    # gate skip events outside the regular session.
+    - cron: "*/5 9-16 * * 1-5"
+      timezone: "America/New_York"
   workflow_dispatch:
 
 permissions:
