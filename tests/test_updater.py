@@ -13,6 +13,7 @@ from sector_pulse_updater import (
     completed_bar_endpoint,
     download_market_data,
     finite,
+    live_quote_is_fresh,
     previous_completed_close,
     parse_chart_quote,
     wilder_rsi,
@@ -41,6 +42,14 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(result["price"], 770.74)
         self.assertEqual(result["previousClose"], 769.79)
         self.assertEqual(result["asOf"].tzinfo, timezone.utc)
+
+    def test_live_quote_freshness_rejects_prior_market_day_during_session(self):
+        now = datetime(2026, 8, 7, 14, 30, tzinfo=timezone.utc)
+        stale = {"asOf": datetime(2026, 8, 6, 14, 30, tzinfo=timezone.utc)}
+        current = {"asOf": datetime(2026, 8, 7, 14, 25, tzinfo=timezone.utc)}
+
+        self.assertFalse(live_quote_is_fresh(stale, now))
+        self.assertTrue(live_quote_is_fresh(current, now))
 
     def test_live_contributions_reconcile_to_spy_change(self):
         now = datetime(2026, 8, 6, 15, 8, tzinfo=timezone.utc)

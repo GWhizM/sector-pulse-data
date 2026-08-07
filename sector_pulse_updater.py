@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
@@ -124,26 +125,56 @@ def parse_chart_quote(ticker: str, payload: dict) -> dict:
     }
 
 
+def live_quote_is_fresh(item: dict, now: datetime | None = None) -> bool:
+    """Reject a prior-day CDN response while the regular market is open."""
+    current = now or datetime.now(timezone.utc)
+    eastern = current.astimezone(ZoneInfo("America/New_York"))
+    market_minute = eastern.hour * 60 + eastern.minute
+    if eastern.weekday() >= 5 or not 570 <= market_minute <= 960:
+        return True
+    quote_time = item["asOf"].astimezone(ZoneInfo("America/New_York"))
+    return quote_time.date() == eastern.date() and current - item["asOf"] <= timedelta(minutes=30)
+
+
 def download_live_quotes(tickers: list[str], attempts: int = 3) -> dict[str, dict]:
     """Fetch current quotes without yfinance's occasionally stale batch cache."""
     quotes = {}
     for ticker in tickers:
         last_error: Exception | None = None
         for attempt in range(1, attempts + 1):
-            try:
-                symbol = quote(ticker, safe="")
-                request = Request(
-                    f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=5m&range=1d",
-                    headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0 Sector-Pulse/1.0"},
-                )
-                with urlopen(request, timeout=15) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-                quotes[ticker] = parse_chart_quote(ticker, payload)
+            symbol = quote(ticker, safe="")
+            best: dict | None = None
+            for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com"):
+                try:
+                    nonce = time.time_ns()
+                    request = Request(
+                        f"https://{host}/v8/finance/chart/{symbol}"
+                        f"?interval=5m&range=1d&includePrePost=false&_={nonce}",
+                        headers={
+                            "Accept": "application/json",
+                            "Cache-Control": "no-cache",
+                            "Pragma": "no-cache",
+                            "User-Agent": "Mozilla/5.0 Sector-Pulse/1.0",
+                        },
+                    )
+                    with urlopen(request, timeout=15) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                    candidate = parse_chart_quote(ticker, payload)
+                    if best is None or candidate["asOf"] > best["asOf"]:
+                        best = candidate
+                    if live_quote_is_fresh(candidate):
+                        quotes[ticker] = candidate
+                        break
+                except Exception as error:
+                    last_error = error
+            if ticker in quotes:
                 break
-            except Exception as error:
-                last_error = error
-                if attempt < attempts:
-                    time.sleep(2 ** (attempt - 1))
+            if best is not None:
+                last_error = RuntimeError(
+                    f"Yahoo returned a stale quote dated {best['asOf'].isoformat()}"
+                )
+            if attempt < attempts:
+                time.sleep(2 ** (attempt - 1))
         else:
             raise RuntimeError(f"Live quote failed for {ticker}: {last_error}") from last_error
     return quotes
