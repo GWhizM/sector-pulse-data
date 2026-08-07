@@ -98,6 +98,14 @@ class UpdaterTests(unittest.TestCase):
 
         self.assertTrue(publish)
 
+    def test_snapshot_guard_reads_current_full_snapshot_shape(self):
+        candidate = {"contributions": {"marketDate": "2026-08-07", "asOf": "2026-08-07T10:30:00-04:00"}}
+        current = {"contributions": {"marketDate": "2026-08-07", "asOf": "2026-08-07T10:35:00-04:00"}}
+
+        publish, _ = should_publish(candidate, current)
+
+        self.assertFalse(publish)
+
     @patch("sector_pulse_updater.time.sleep")
     @patch("sector_pulse_updater.yf.download")
     def test_download_retries_transient_failure_without_threads(self, download, sleep):

@@ -57,6 +57,10 @@ jobs:
       - name: Build snapshot and protect newer published data
         if: steps.market_window.outputs.enabled == 'true'
         id: freshness
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_KV_NAMESPACE_ID: ${{ secrets.CLOUDFLARE_KV_NAMESPACE_ID }}
         shell: bash
         run: |
           built=false
@@ -65,12 +69,19 @@ jobs:
             echo "Snapshot attempt $attempt of 3"
             if python sector_pulse_updater.py --output snapshot.json; then
               built=true
-              decision=$(python snapshot_guard.py \
-                --candidate snapshot.json \
-                --current-url "https://sector-pulse-api.andrew-2f4.workers.dev/api/contributions")
-              publish=${decision#publish=}
-              if [ "$publish" = "true" ]; then
-                break
+              if curl --fail-with-body --silent --show-error \
+                --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                --output current-snapshot.json \
+                "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$CLOUDFLARE_KV_NAMESPACE_ID/values/snapshot-latest"; then
+                decision=$(python snapshot_guard.py \
+                  --candidate snapshot.json \
+                  --current-file current-snapshot.json)
+                publish=${decision#publish=}
+                if [ "$publish" = "true" ]; then
+                  break
+                fi
+              else
+                echo "Could not read the current KV snapshot; preserving it" >&2
               fi
             fi
             if [ "$attempt" -lt 3 ]; then

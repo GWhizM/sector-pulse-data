@@ -19,8 +19,9 @@ def parse_timestamp(value: str | None) -> datetime | None:
 
 def should_publish(candidate: dict, current: dict) -> tuple[bool, str]:
     candidate_data = candidate.get("contributions", candidate)
+    current_data = current.get("contributions", current)
     candidate_date = candidate_data.get("marketDate")
-    current_date = current.get("marketDate")
+    current_date = current_data.get("marketDate")
     if not candidate_date:
         return False, "candidate snapshot has no marketDate"
     if not current_date:
@@ -31,7 +32,7 @@ def should_publish(candidate: dict, current: dict) -> tuple[bool, str]:
         return True, f"candidate marketDate {candidate_date} is newer than current {current_date}"
 
     candidate_as_of = parse_timestamp(candidate_data.get("asOf"))
-    current_as_of = parse_timestamp(current.get("asOf"))
+    current_as_of = parse_timestamp(current_data.get("asOf"))
     if candidate_as_of and current_as_of and candidate_as_of < current_as_of:
         return False, f"candidate asOf {candidate_as_of.isoformat()} is older than current {current_as_of.isoformat()}"
     return True, "candidate is not older than the current snapshot"
@@ -53,12 +54,17 @@ def load_current(url: str) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--candidate", required=True)
-    parser.add_argument("--current-url", required=True)
+    current_source = parser.add_mutually_exclusive_group(required=True)
+    current_source.add_argument("--current-url")
+    current_source.add_argument("--current-file")
     args = parser.parse_args()
 
     candidate = json.loads(Path(args.candidate).read_text(encoding="utf-8"))
     try:
-        current = load_current(args.current_url)
+        if args.current_file:
+            current = json.loads(Path(args.current_file).read_text(encoding="utf-8"))
+        else:
+            current = load_current(args.current_url)
     except Exception as exc:
         print(f"Snapshot guard could not read the current snapshot; preserving it: {exc}", file=sys.stderr)
         print("publish=false")
