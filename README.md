@@ -2,7 +2,8 @@
 
 Public, credential-free updater for the Sector Pulse research dashboard.
 
-The Cloudflare Worker Cron Trigger dispatches the GitHub workflow:
+The Cloudflare Worker Cron Trigger dispatches the GitHub workflow. A second,
+native GitHub schedule runs as a no-cost fallback if Cloudflare misses a cycle:
 
 - runs every five minutes during regular U.S. market hours;
 - downloads daily market data through `yfinance` and current prices through
@@ -10,6 +11,8 @@ The Cloudflare Worker Cron Trigger dispatches the GitHub workflow:
 - retries stale provider responses up to three times per scheduled cycle;
 - allows delayed GitHub-hosted jobs to finish instead of cancelling them when
   the next five-minute trigger arrives;
+- coalesces overlapping Cloudflare and GitHub triggers without interrupting an
+  update that is already running;
 - calculates Wilder RSI and estimated sector contribution;
 - writes a single JSON snapshot to Cloudflare Workers KV; and
 - retains the last successful snapshot when a data source fails or returns data
