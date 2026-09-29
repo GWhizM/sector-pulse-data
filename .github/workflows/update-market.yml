@@ -8,12 +8,8 @@ on:
       - ".github/workflows/update-market.yml"
       - "sector_pulse_updater.py"
       - "snapshot_guard.py"
-  schedule:
-    # GitHub is a no-cost fallback if the Cloudflare Cron Trigger misses a cycle.
-    # Use GitHub's canonical five-minute syntax and let the job's market-hours
-    # gate skip events outside the regular session.
-    - cron: "*/5 9-16 * * 1-5"
-      timezone: "America/New_York"
+  # Cloudflare handles scheduling and dispatches this workflow during market hours.
+  # Avoid a native schedule: GitHub disables it after 60 days of repo inactivity.
   workflow_dispatch:
 
 permissions:
@@ -29,35 +25,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
-      - name: Check regular U.S. market hours
-        id: market_window
-        shell: bash
-        run: |
-          enabled=true
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            weekday=$(TZ=America/New_York date +%u)
-            market_time=$(TZ=America/New_York date +%H%M)
-            if [ "$weekday" -gt 5 ] || [ "$market_time" -lt 0930 ] || [ "$market_time" -gt 1600 ]; then
-              enabled=false
-            fi
-          fi
-          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v6
-        if: steps.market_window.outputs.enabled == 'true'
 
       - uses: actions/setup-python@v6
-        if: steps.market_window.outputs.enabled == 'true'
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
-        if: steps.market_window.outputs.enabled == 'true'
         run: python -m pip install -r requirements.txt
 
       - name: Build snapshot and protect newer published data
-        if: steps.market_window.outputs.enabled == 'true'
         id: freshness
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -97,7 +75,7 @@ jobs:
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
 
       - name: Publish latest successful snapshot
-        if: steps.market_window.outputs.enabled == 'true' && steps.freshness.outputs.publish == 'true'
+        if: steps.freshness.outputs.publish == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

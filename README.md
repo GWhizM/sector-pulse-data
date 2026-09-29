@@ -2,8 +2,7 @@
 
 Public, credential-free updater for the Sector Pulse research dashboard.
 
-The Cloudflare Worker Cron Trigger dispatches the GitHub workflow. A second,
-native GitHub schedule runs as a no-cost fallback if Cloudflare misses a cycle:
+The Cloudflare Worker Cron Trigger dispatches the GitHub workflow:
 
 - runs every five minutes during regular U.S. market hours;
 - downloads daily market data through `yfinance` and current prices through
@@ -11,7 +10,7 @@ native GitHub schedule runs as a no-cost fallback if Cloudflare misses a cycle:
 - retries stale provider responses up to three times per scheduled cycle;
 - allows delayed GitHub-hosted jobs to finish instead of cancelling them when
   the next five-minute trigger arrives;
-- coalesces overlapping Cloudflare and GitHub triggers without interrupting an
+- coalesces overlapping workflow triggers without interrupting an
   update that is already running;
 - calculates Wilder RSI and estimated sector contribution;
 - writes a single JSON snapshot to Cloudflare Workers KV; and
@@ -55,6 +54,16 @@ Cloudflare evaluates the cron expression in UTC. The Worker converts each event
 to America/New_York time, dispatches the market workflow every five minutes from
 9:30 a.m. through 4:00 p.m. on weekdays, and dispatches daily history at
 4:15 p.m. Other trigger events return without contacting GitHub.
+
+Cloudflare is the sole automatic scheduler. There is intentionally no native
+GitHub Actions `schedule` trigger: public repositories' scheduled workflows are
+disabled after 60 days without repository activity. Cloudflare uses
+`workflow_dispatch`, which does not depend on that native schedule. Manual runs
+and runs triggered by updater code changes remain available.
+
+There is no GitHub scheduling fallback. Keep the Cloudflare Cron Trigger enabled
+and its GitHub token valid. The Worker's `/api/health` endpoint reports the latest
+dispatch result in `scheduler` and the latest snapshot timestamp in `generatedAt`.
 
 ## Run locally
 
